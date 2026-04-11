@@ -1,0 +1,34 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Contracts and outputs — likely contain sensitive data
+contracts/*.pdf
+contracts/*.txt
+contracts/*.docx
+outputs/*.md
+outputs/*.pdf
+
+# Keep the folder structure but not the contents
+!contracts/.gitkeep
+!outputs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LangGraph checkpoints (in-memory is fine for dev, but sqlite db files shouldn't be committed)
+*.db

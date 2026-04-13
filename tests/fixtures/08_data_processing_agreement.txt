@@ -1,0 +1,16 @@
+DATA PROCESSING AGREEMENT
+
+1. DATA USE
+Processor shall only process data per Controller instructions.
+
+2. SECURITY
+Processor must implement appropriate technical safeguards.
+
+3. BREACH
+Processor must notify within 72 hours.
+
+4. SUBPROCESSORS
+Require prior approval.
+
+5. LIABILITY
+Processor liable for breaches caused by negligence.

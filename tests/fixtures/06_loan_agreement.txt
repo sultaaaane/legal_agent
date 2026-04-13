@@ -1,0 +1,16 @@
+LOAN AGREEMENT
+
+1. AMOUNT
+Lender agrees to lend $10,000.
+
+2. INTEREST
+5% annually.
+
+3. REPAYMENT
+Monthly payments over 24 months.
+
+4. DEFAULT
+Missed payments trigger full balance due immediately.
+
+5. GOVERNING LAW
+State of New York.

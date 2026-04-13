@@ -1,1 +1,37 @@
-Sample NDA contract text.
+NON-DISCLOSURE AGREEMENT
+
+This Non-Disclosure Agreement ("Agreement") is entered into as of January 1, 2025, between Acme Corp ("Disclosing Party") and the undersigned individual or entity ("Receiving Party").
+
+1. CONFIDENTIAL INFORMATION
+The Receiving Party agrees to keep confidential all information disclosed by the Disclosing Party, including but not limited to trade secrets, business plans, financial data, technical specifications, customer lists, and any other proprietary information, whether disclosed orally, in writing, or by any other means. This obligation shall survive termination of this Agreement indefinitely and shall apply worldwide without limitation.
+
+2. NON-COMPETE
+The Receiving Party agrees that for a period of five (5) years following the termination of this Agreement, they shall not, directly or indirectly, engage in any business activity that competes with the Disclosing Party anywhere in the world, including employment, consulting, founding, or investing in any competing entity.
+
+3. INTELLECTUAL PROPERTY ASSIGNMENT
+Any and all work product, inventions, discoveries, or improvements conceived, developed, or reduced to practice by the Receiving Party during the term of this Agreement, or within two (2) years after termination, shall be the sole and exclusive property of the Disclosing Party, including any work created outside of working hours and unrelated to the subject matter of this Agreement.
+
+4. INDEMNIFICATION
+The Receiving Party shall indemnify, defend, and hold harmless the Disclosing Party and its officers, directors, employees, and agents from and against any and all claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or relating to any breach of this Agreement by the Receiving Party, without any cap or limitation on the amount of such indemnification.
+
+5. LIMITATION OF LIABILITY
+In no event shall the Disclosing Party be liable to the Receiving Party for any indirect, incidental, special, or consequential damages arising out of or related to this Agreement, even if advised of the possibility of such damages. The Disclosing Party's total liability shall not exceed one hundred dollars ($100).
+
+6. TERM AND TERMINATION
+This Agreement shall commence on the date first written above and shall continue for an initial term of one (1) year, automatically renewing for successive one-year periods unless terminated by either party upon ninety (90) days written notice. Notwithstanding the foregoing, the Disclosing Party may terminate this Agreement immediately and without notice at its sole discretion.
+
+7. GOVERNING LAW AND DISPUTE RESOLUTION
+This Agreement shall be governed by the laws of the State of Delaware. Any dispute arising under this Agreement shall be resolved exclusively by binding arbitration in Wilmington, Delaware, administered by JAMS, and the Receiving Party hereby waives any right to a jury trial. The Receiving Party agrees to pay all costs of arbitration regardless of the outcome.
+
+8. UNILATERAL MODIFICATION
+The Disclosing Party reserves the right to modify the terms of this Agreement at any time upon thirty (30) days written notice to the Receiving Party. Continued performance by the Receiving Party after such notice shall constitute acceptance of the modified terms.
+
+9. ENTIRE AGREEMENT
+This Agreement constitutes the entire agreement between the parties with respect to its subject matter and supersedes all prior agreements, representations, and understandings.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.
+
+ACME CORP                          RECEIVING PARTY
+By: ___________________            By: ___________________
+Name:                              Name:
+Title:                             Date:

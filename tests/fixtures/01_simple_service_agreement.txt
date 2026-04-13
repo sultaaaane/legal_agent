@@ -1,0 +1,18 @@
+SERVICE AGREEMENT
+
+This Agreement is entered into between Alpha Services ("Provider") and Client ("Client").
+
+1. SERVICES
+Provider agrees to perform general consulting services as requested by Client.
+
+2. PAYMENT
+Client shall pay Provider $50/hour within 15 days of invoice.
+
+3. TERM
+This Agreement shall continue until terminated by either party with 7 days notice.
+
+4. LIABILITY
+Each party is responsible for its own actions.
+
+5. GOVERNING LAW
+This Agreement shall be governed by the laws of the Client's location.

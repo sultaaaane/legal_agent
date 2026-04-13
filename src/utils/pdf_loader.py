@@ -1,49 +1,98 @@
 from pathlib import Path
 
 
-def load_contract(path: Path) -> str:
-    """Load a contract from .txt or .pdf. Returns clean plain text."""
+def load_contract(path: str | Path) -> str:
+    """
+    Load a contract from a .txt or .pdf file.
+    Returns clean plain text ready to feed into the graph.
+
+    Raises:
+        FileNotFoundError — file does not exist
+        ValueError        — unsupported file type
+    """
     path = Path(path)
 
     if not path.exists():
-        raise FileNotFoundError(f"Contract not found: {path}")
+        raise FileNotFoundError(f"Contract file not found: {path}")
 
     suffix = path.suffix.lower()
 
     if suffix == ".txt":
-        return path.read_text(encoding="utf-8")
+        return _load_text(path)
 
     if suffix == ".pdf":
         return _load_pdf(path)
 
-    raise ValueError(f"Unsupported file type: {suffix}. Use .txt or .pdf")
+    raise ValueError(
+        f"Unsupported file type '{suffix}'. "
+        f"Only .txt and .pdf are supported."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal loaders
+# ---------------------------------------------------------------------------
+
+def _load_text(path: Path) -> str:
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise ValueError(f"Contract file is empty: {path}")
+    return text
 
 
 def _load_pdf(path: Path) -> str:
-    """Try pdfplumber first (handles structured PDFs), fall back to OCR."""
-    import pdfplumber
+    """
+    Strategy:
+    1. Try pdfplumber  — works well for digitally created PDFs (text layer present)
+    2. Fall back to OCR — for scanned PDFs with no text layer
+    """
+    text = _extract_with_pdfplumber(path)
 
-    text_parts = []
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
+    # If we got very little text, the PDF is probably scanned — try OCR
+    if len(text.strip()) < 200:
+        print(f"[pdf_loader] Low text yield from pdfplumber ({len(text)} chars), trying OCR...")
+        text = _extract_with_ocr(path)
 
-    text = "\n\n".join(text_parts).strip()
-
-    # If pdfplumber got nothing (scanned PDF), fall back to OCR
-    if len(text) < 100:
-        text = _ocr_pdf(path)
+    if not text.strip():
+        raise ValueError(
+            f"Could not extract text from PDF: {path}\n"
+            f"Make sure the file is not password-protected."
+        )
 
     return text
 
 
-def _ocr_pdf(path: Path) -> str:
-    """OCR fallback for scanned PDFs using pytesseract."""
-    import pytesseract
-    from pdf2image import convert_from_path
+def _extract_with_pdfplumber(path: Path) -> str:
+    """Extract text using pdfplumber (best for structured PDFs)."""
+    try:
+        import pdfplumber
+    except ImportError:
+        raise ImportError("pdfplumber is required: pip install pdfplumber")
 
+    pages = []
+    with pdfplumber.open(path) as pdf:
+        for i, page in enumerate(pdf.pages):
+            page_text = page.extract_text()
+            if page_text:
+                pages.append(page_text)
+
+    return "\n\n".join(pages)
+
+
+def _extract_with_ocr(path: Path) -> str:
+    """OCR fallback for scanned PDFs using pytesseract."""
+    try:
+        import pytesseract
+        from pdf2image import convert_from_path
+        from PIL import Image
+    except ImportError:
+        raise ImportError(
+            "OCR dependencies not installed. Run:\n"
+            "  pip install pytesseract pdf2image Pillow\n"
+            "  # Also install Tesseract: https://github.com/tesseract-ocr/tesseract"
+        )
+
+    print("[pdf_loader] Running OCR — this may take a minute for long contracts...")
     images = convert_from_path(path, dpi=300)
-    pages = [pytesseract.image_to_string(img) for img in images]
-    return "\n\n".join(pages).strip()
+    pages  = [pytesseract.image_to_string(img, lang="eng") for img in images]
+    return "\n\n".join(pages)

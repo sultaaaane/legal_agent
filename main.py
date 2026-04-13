@@ -1,9 +1,21 @@
-import typer
+"""
+Legal Contract Reviewer — CLI entry point.
+
+Usage:
+  python main.py contracts/my_nda.pdf
+  python main.py contracts/my_nda.pdf --output outputs/nda_review.md
+  python main.py contracts/my_nda.pdf --thread-id session-42
+"""
+
+import traceback
 from pathlib import Path
+
+import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.prompt import Prompt
-from dotenv import load_dotenv
+from rich.rule import Rule
 
 load_dotenv()
 
@@ -11,27 +23,59 @@ from src.graph.builder import build_graph
 from src.utils.pdf_loader import load_contract
 from langgraph.types import Command
 
-app = typer.Typer()
+app = typer.Typer(add_completion=False)
 console = Console()
 
 
 @app.command()
 def review(
     contract_path: Path = typer.Argument(
-        ..., help="Path to contract file (.txt or .pdf)"
+        ...,
+        help="Path to the contract file (.txt or .pdf)",
+        exists=True,
     ),
-    thread_id: str = typer.Option("default", help="Session ID for checkpointing"),
-    output: Path = typer.Option(None, help="Save report to this path"),
+    thread_id: str = typer.Option(
+        "default",
+        "--thread-id",
+        "-t",
+        help="Session ID — use the same ID to resume a previous review",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Path to save the markdown report (default: outputs/<filename>_review.md)",
+    ),
+    no_persist: bool = typer.Option(
+        False,
+        "--no-persist",
+        help="Disable checkpointing (faster for one-shot runs)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show node-by-node progress logs",
+    ),
 ):
-    """Review a legal contract and generate a risk report with negotiation suggestions."""
+    """
+    Review a legal contract and generate a risk report with optional
+    negotiation suggestions for clauses you flag as priority.
+    """
+    console.print()
+    console.print(Rule("[bold]Legal Contract Reviewer[/bold]"))
 
-    # Load contract text
-    console.print(f"\n[bold]Loading contract:[/bold] {contract_path}")
-    raw_text = load_contract(contract_path)
-    console.print(f"[green]✓[/green] Loaded {len(raw_text):,} characters\n")
+    # --- Load contract ---
+    console.print(f"\n📄 Loading: [cyan]{contract_path}[/cyan]")
+    try:
+        raw_text = load_contract(contract_path)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+    console.print(f"   {len(raw_text):,} characters loaded\n")
 
-    # Build and run graph
-    graph = build_graph()
+    # --- Build graph ---
+    graph = build_graph(use_persistent_memory=not no_persist)
     config = {"configurable": {"thread_id": thread_id}}
 
     initial_state = {
@@ -44,52 +88,173 @@ def review(
         "report": None,
     }
 
-    console.print("[bold]Starting analysis...[/bold]")
-    with console.status("Extracting and analyzing clauses..."):
-        result = graph.invoke(initial_state, config=config)
+    # --- Run Phase 1: extraction + analysis ---
+    console.print("[bold]Phase 1 — Extracting and analysing clauses...[/bold]")
 
-    # Handle human-in-the-loop interrupt
-    interrupt_data = result.get("__interrupt__")
-    if interrupt_data:
-        payload = interrupt_data[0].value
+    if verbose:
+        # Stream events so node logs print as they happen
+        result = _stream_with_logs(graph, initial_state, config, console)
+    else:
+        # Invoke normally — node wrapper still prints to stdout
+        try:
+            result = graph.invoke(initial_state, config=config)
+        except Exception as e:
+            console.print(
+                f"\n[red bold]Graph error:[/red bold] {type(e).__name__}: {e}"
+            )
+            console.print(traceback.format_exc())
+            raise typer.Exit(code=1)
+
+    if result is None:
+        console.print(
+            "[red]Graph returned None — check the logs above for the error.[/red]"
+        )
+        raise typer.Exit(code=1)
+   # --- Handle human-in-the-loop interrupt ---
+    state_snapshot = graph.get_state(config)
+    is_interrupted = bool(state_snapshot.next)
+
+    if is_interrupted:
+        # Reconstruct payload from the saved state values
+        analyses = state_snapshot.values.get("analyses", {})
+        clauses  = state_snapshot.values.get("clauses", [])
+        ctype    = state_snapshot.values.get("contract_type", "Contract")
+
+        from src.agents.flag_detector import CONTRACT_FLAGS_KEY
+        clause_analyses = sorted(
+            [v for k, v in analyses.items() if k != CONTRACT_FLAGS_KEY],
+            key=lambda x: x.get("risk_score", 0),
+            reverse=True,
+        )
+        contract_flags = analyses.get(CONTRACT_FLAGS_KEY, {})
+
+        # Build summary inline
+        lines = [f"## Risk Summary — {ctype}", ""]
+        if contract_flags.get("flags"):
+            lines += ["### ⚠️ Cross-Clause Issues", ""]
+            for flag in contract_flags["flags"]:
+                lines.append(f"- {flag}")
+            lines.append("")
+        lines += ["### Clause Risk Scores", "",
+                  "| Clause ID | Risk | Flags |",
+                  "|-----------|------|-------|"]
+        for a in clause_analyses:
+            cid   = a.get("clause_id", "?")
+            score = a.get("risk_score", 0)
+            flags = ", ".join(a.get("flags", [])) or "—"
+            emoji = "🔴" if score >= 7 else "🟡" if score >= 4 else "🟢"
+            lines.append(f"| `{cid}` | {emoji} {score}/10 | {flags} |")
+
+        high_risk_ids = [a["clause_id"] for a in clause_analyses if a.get("risk_score", 0) >= 7]
+
+        payload = {
+            "summary":      "\n".join(lines),
+            "instruction":  "Enter clause IDs to negotiate, e.g. clause_003, clause_006",
+            "clauses":      [{"id": a["clause_id"], "score": a.get("risk_score", 0)} for a in clause_analyses],
+            "high_risk_ids": high_risk_ids,
+        }
 
         console.print("\n")
         console.print(Markdown(payload["summary"]))
+        console.print()
+        console.print(Rule())
         console.print(
-            "\n[bold yellow]Which clauses do you want negotiated?[/bold yellow]"
-        )
-        console.print(
-            "[dim]Enter clause IDs separated by commas (e.g. clause_003, clause_007)[/dim]"
-        )
-        console.print(
-            "[dim]Press Enter with no input to negotiate all high-risk clauses (7+)[/dim]\n"
+            "\n[bold yellow]Which clauses do you want to negotiate?[/bold yellow]\n"
+            f"[dim]{payload['instruction']}[/dim]\n"
         )
 
-        raw_input = Prompt.ask("Clause IDs").strip()
+        high_risk = payload.get("high_risk_ids", [])
+        if high_risk:
+            console.print(
+                f"[dim]High-risk clauses (auto-selected if you press Enter): "
+                f"{', '.join(high_risk)}[/dim]\n"
+            )
 
-        if raw_input == "":
-            # Default: all clauses with risk score >= 7
-            priorities = [c["id"] for c in payload["clauses"] if c["score"] >= 7]
-            console.print(f"[dim]Selecting all high-risk clauses: {priorities}[/dim]")
+        raw_input_str = Prompt.ask("Your selection", default="").strip()
+
+        if not raw_input_str:
+            priorities = high_risk
+            if priorities:
+                console.print(f"[dim]Auto-selected: {priorities}[/dim]")
+            else:
+                console.print(
+                    "[yellow]No high-risk clauses found — skipping negotiation.[/yellow]"
+                )
         else:
-            priorities = [x.strip() for x in raw_input.split(",")]
+            priorities = [
+                x.strip()
+                for x in raw_input_str.replace("[", "")
+                .replace("]", "")
+                .replace("'", "")
+                .split(",")
+                if x.strip()
+            ]
 
-        console.print("\n[bold]Generating negotiation suggestions...[/bold]")
-        with console.status("Writing counter-clauses..."):
+        # --- Run Phase 2: negotiation + report ---
+        console.print(
+            f"\n[bold]Phase 2 — Generating suggestions for: "
+            f"{', '.join(priorities) if priorities else 'none (writing report only)'}[/bold]\n"
+        )
+
+        try:
             final = graph.invoke(Command(resume=priorities), config=config)
+        except Exception as e:
+            console.print(
+                f"\n[red bold]Phase 2 error:[/red bold] {type(e).__name__}: {e}"
+            )
+            console.print(traceback.format_exc())
+            raise typer.Exit(code=1)
+
     else:
+        # Graph completed without interrupt (shouldn't happen in normal flow,
+        # but handle gracefully)
         final = result
 
-    # Output report
-    report = final.get("report", "No report generated.")
+    # --- Output report ---
+    report = (final or {}).get("report", "")
+    if not report:
+        console.print(
+            "\n[red bold]No report was generated.[/red bold]\n"
+            "Run with [bold]--verbose[/bold] or check the node logs printed above.\n"
+            "Common causes:\n"
+            "  • Ollama is not running  →  run: [bold]ollama serve[/bold]\n"
+            "  • Model not pulled       →  run: [bold]ollama pull qwen2.5:14b[/bold]\n"
+            "  • Wrong model name in .env  →  check PRIMARY_MODEL / FAST_MODEL\n"
+            "  • Graph loop exited early   →  run: [bold]python debug_run.py[/bold]"
+        )
+        raise typer.Exit(code=1)
+
     console.print("\n")
+    console.print(Rule("[bold]Review Report[/bold]"))
+    console.print()
     console.print(Markdown(report))
 
-    # Save if requested
+    # --- Save report ---
     save_path = output or Path("outputs") / f"{contract_path.stem}_review.md"
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    save_path.write_text(report)
-    console.print(f"\n[green]✓[/green] Report saved to [bold]{save_path}[/bold]")
+    save_path.write_text(report, encoding="utf-8")
+
+    console.print()
+    console.print(Rule())
+    console.print(f"\n✅ Report saved to [bold green]{save_path}[/bold green]\n")
+
+
+def _stream_with_logs(graph, initial_state, config, console) -> dict:
+    """Stream graph events and print each node as it completes."""
+    result = {}
+    try:
+        for event in graph.stream(initial_state, config=config, stream_mode="updates"):
+            for node_name, node_output in event.items():
+                if node_name == "__interrupt__":
+                    result["__interrupt__"] = node_output
+                else:
+                    if isinstance(node_output, dict):
+                        result.update(node_output)
+    except Exception as e:
+        console.print(f"\n[red bold]Stream error:[/red bold] {type(e).__name__}: {e}")
+        console.print(traceback.format_exc())
+        return None
+    return result
 
 
 if __name__ == "__main__":

@@ -26,8 +26,16 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 OLLAMA_BASE_URL  = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-PRIMARY_MODEL    = os.getenv("PRIMARY_MODEL",   "qwen2.5:14b")
-FAST_MODEL       = os.getenv("FAST_MODEL",      "llama3.1")
+PRIMARY_MODEL    = os.getenv("PRIMARY_MODEL",   "qwen2:1.5b")
+FAST_MODEL       = os.getenv("FAST_MODEL",      "qwen2:1.5b")
+FALLBACK_MODEL   = os.getenv("FALLBACK_MODEL",  FAST_MODEL)
+
+PRIMARY_NUM_CTX  = int(os.getenv("PRIMARY_NUM_CTX", "4096"))
+FAST_NUM_CTX     = int(os.getenv("FAST_NUM_CTX", "2048"))
+
+ENABLE_OOM_FALLBACK = os.getenv("ENABLE_OOM_FALLBACK", "true").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 # ---------------------------------------------------------------------------
 # Base model instances
@@ -37,7 +45,7 @@ _llm_base = ChatOllama(
     model       = PRIMARY_MODEL,
     base_url    = OLLAMA_BASE_URL,
     temperature = 0,
-    num_ctx     = 8192,
+    num_ctx     = PRIMARY_NUM_CTX,
     num_predict = 2048,
 )
 
@@ -45,9 +53,18 @@ _llm_fast_base = ChatOllama(
     model       = FAST_MODEL,
     base_url    = OLLAMA_BASE_URL,
     temperature = 0,
-    num_ctx     = 4096,
+    num_ctx     = FAST_NUM_CTX,
     num_predict = 1024,
 )
+
+
+def _is_memory_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return (
+        "requires more system memory" in text
+        or "out of memory" in text
+        or "insufficient memory" in text
+    )
 
 # ---------------------------------------------------------------------------
 # Structured output wrapper
@@ -64,12 +81,31 @@ class RobustStructuredLLM:
 
     def __init__(self, base_llm: ChatOllama):
         self._llm = base_llm
+        self._fallback_llm = None
 
     def with_structured_output(self, schema: Type[T]) -> "_StructuredChain":
-        return _StructuredChain(self._llm, schema)
+        return _StructuredChain(self, schema)
 
     def invoke(self, messages) -> BaseMessage:
-        return self._llm.invoke(messages)
+        try:
+            return self._llm.invoke(messages)
+        except Exception as first_error:
+            if not ENABLE_OOM_FALLBACK or not _is_memory_error(first_error):
+                raise
+
+            if not FALLBACK_MODEL or FALLBACK_MODEL == getattr(self._llm, "model", None):
+                raise
+
+            if self._fallback_llm is None:
+                self._fallback_llm = ChatOllama(
+                    model       = FALLBACK_MODEL,
+                    base_url    = OLLAMA_BASE_URL,
+                    temperature = 0,
+                    num_ctx     = FAST_NUM_CTX,
+                    num_predict = 1024,
+                )
+
+            return self._fallback_llm.invoke(messages)
 
     def bind_tools(self, tools):
         return self._llm.bind_tools(tools)
@@ -93,8 +129,8 @@ class _StructuredChain:
         "no code fences. Start immediately with { and end with }."
     )
 
-    def __init__(self, base_llm: ChatOllama, schema: Type[T]):
-        self._llm    = base_llm
+    def __init__(self, wrapped_llm: RobustStructuredLLM, schema: Type[T]):
+        self._llm    = wrapped_llm
         self._schema = schema
 
     def invoke(self, messages: list) -> T:

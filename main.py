@@ -8,6 +8,7 @@ Usage:
 """
 
 import traceback
+import os
 from pathlib import Path
 
 import typer
@@ -18,6 +19,37 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 
 load_dotenv()
+
+
+def _sanitize_langsmith_env() -> bool:
+    """
+    Disable LangSmith tracing automatically when tracing is enabled but
+    the API key is missing or clearly a placeholder.
+
+    Returns True if tracing was auto-disabled.
+    """
+    tracing_raw = os.getenv("LANGCHAIN_TRACING_V2", "").strip().lower()
+    tracing_on = tracing_raw in {"1", "true", "yes", "on"}
+
+    if not tracing_on:
+        return False
+
+    api_key = os.getenv("LANGCHAIN_API_KEY", "").strip()
+    is_placeholder = (
+        not api_key
+        or api_key in {"ls__...", "..."}
+        or "..." in api_key
+        or api_key.lower().startswith("changeme")
+    )
+
+    if is_placeholder:
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        return True
+
+    return False
+
+
+_LANGSMITH_DISABLED = _sanitize_langsmith_env()
 
 from src.graph.builder import build_graph
 from src.utils.pdf_loader import load_contract
@@ -64,6 +96,10 @@ def review(
     """
     console.print()
     console.print(Rule("[bold]Legal Contract Reviewer[/bold]"))
+    if _LANGSMITH_DISABLED:
+        console.print(
+            "[dim]LangSmith tracing disabled (missing/placeholder API key).[/dim]"
+        )
 
     # --- Load contract ---
     console.print(f"\n📄 Loading: [cyan]{contract_path}[/cyan]")

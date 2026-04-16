@@ -9,6 +9,7 @@ Requires:
   ollama pull <model-name>
   ollama serve   (or the Ollama desktop app running)
 """
+
 import os
 import json
 import re
@@ -25,16 +26,19 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 
-OLLAMA_BASE_URL  = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-PRIMARY_MODEL    = os.getenv("PRIMARY_MODEL",   "qwen2:1.5b")
-FAST_MODEL       = os.getenv("FAST_MODEL",      "qwen2:1.5b")
-FALLBACK_MODEL   = os.getenv("FALLBACK_MODEL",  FAST_MODEL)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "qwen2:1.5b")
+FAST_MODEL = os.getenv("FAST_MODEL", "qwen2:1.5b")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", FAST_MODEL)
 
-PRIMARY_NUM_CTX  = int(os.getenv("PRIMARY_NUM_CTX", "4096"))
-FAST_NUM_CTX     = int(os.getenv("FAST_NUM_CTX", "2048"))
+PRIMARY_NUM_CTX = int(os.getenv("PRIMARY_NUM_CTX", "4096"))
+FAST_NUM_CTX = int(os.getenv("FAST_NUM_CTX", "2048"))
 
 ENABLE_OOM_FALLBACK = os.getenv("ENABLE_OOM_FALLBACK", "true").strip().lower() in {
-    "1", "true", "yes", "on"
+    "1",
+    "true",
+    "yes",
+    "on",
 }
 
 # ---------------------------------------------------------------------------
@@ -42,19 +46,19 @@ ENABLE_OOM_FALLBACK = os.getenv("ENABLE_OOM_FALLBACK", "true").strip().lower() i
 # ---------------------------------------------------------------------------
 
 _llm_base = ChatOllama(
-    model       = PRIMARY_MODEL,
-    base_url    = OLLAMA_BASE_URL,
-    temperature = 0,
-    num_ctx     = PRIMARY_NUM_CTX,
-    num_predict = 2048,
+    model=PRIMARY_MODEL,
+    base_url=OLLAMA_BASE_URL,
+    temperature=0,
+    num_ctx=PRIMARY_NUM_CTX,
+    num_predict=2048,
 )
 
 _llm_fast_base = ChatOllama(
-    model       = FAST_MODEL,
-    base_url    = OLLAMA_BASE_URL,
-    temperature = 0,
-    num_ctx     = FAST_NUM_CTX,
-    num_predict = 1024,
+    model=FAST_MODEL,
+    base_url=OLLAMA_BASE_URL,
+    temperature=0,
+    num_ctx=FAST_NUM_CTX,
+    num_predict=1024,
 )
 
 
@@ -65,6 +69,7 @@ def _is_memory_error(error: Exception) -> bool:
         or "out of memory" in text
         or "insufficient memory" in text
     )
+
 
 # ---------------------------------------------------------------------------
 # Structured output wrapper
@@ -93,16 +98,18 @@ class RobustStructuredLLM:
             if not ENABLE_OOM_FALLBACK or not _is_memory_error(first_error):
                 raise
 
-            if not FALLBACK_MODEL or FALLBACK_MODEL == getattr(self._llm, "model", None):
+            if not FALLBACK_MODEL or FALLBACK_MODEL == getattr(
+                self._llm, "model", None
+            ):
                 raise
 
             if self._fallback_llm is None:
                 self._fallback_llm = ChatOllama(
-                    model       = FALLBACK_MODEL,
-                    base_url    = OLLAMA_BASE_URL,
-                    temperature = 0,
-                    num_ctx     = FAST_NUM_CTX,
-                    num_predict = 1024,
+                    model=FALLBACK_MODEL,
+                    base_url=OLLAMA_BASE_URL,
+                    temperature=0,
+                    num_ctx=FAST_NUM_CTX,
+                    num_predict=1024,
                 )
 
             return self._fallback_llm.invoke(messages)
@@ -130,7 +137,7 @@ class _StructuredChain:
     )
 
     def __init__(self, wrapped_llm: RobustStructuredLLM, schema: Type[T]):
-        self._llm    = wrapped_llm
+        self._llm = wrapped_llm
         self._schema = schema
 
     def invoke(self, messages: list) -> T:
@@ -153,7 +160,7 @@ class _StructuredChain:
         from langchain_core.messages import SystemMessage
 
         schema_json = json.dumps(self._schema.model_json_schema(), indent=2)
-        hint        = self.JSON_INSTRUCTION + f"\n\nJSON Schema:\n{schema_json}"
+        hint = self.JSON_INSTRUCTION + f"\n\nJSON Schema:\n{schema_json}"
 
         result = list(messages)
         for i, msg in enumerate(result):
@@ -166,10 +173,9 @@ class _StructuredChain:
 
     def _inject_retry_hint(self, messages: list, error: str) -> list:
         from langchain_core.messages import HumanMessage
+
         result = list(messages)
-        result.append(HumanMessage(
-            content=f"[Error: {error}]{self.RETRY_INSTRUCTION}"
-        ))
+        result.append(HumanMessage(content=f"[Error: {error}]{self.RETRY_INSTRUCTION}"))
         return result
 
     def _parse(self, content: str) -> T:
@@ -177,12 +183,12 @@ class _StructuredChain:
 
         # Strip markdown code fences
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\s*```$",          "", text, flags=re.MULTILINE)
+        text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
         text = text.strip()
 
         # Find outermost JSON object
         start = text.find("{")
-        end   = text.rfind("}")
+        end = text.rfind("}")
         if start == -1 or end == -1:
             raise ValueError(f"No JSON object found in response: {text[:200]}")
 
@@ -192,7 +198,7 @@ class _StructuredChain:
             data = json.loads(json_str)
         except json.JSONDecodeError:
             json_str = self._repair_json(json_str)
-            data     = json.loads(json_str)
+            data = json.loads(json_str)
 
         return self._schema.model_validate(data)
 
@@ -208,5 +214,5 @@ class _StructuredChain:
 # Public exports — same interface as the OpenAI version
 # ---------------------------------------------------------------------------
 
-llm      = RobustStructuredLLM(_llm_base)
+llm = RobustStructuredLLM(_llm_base)
 llm_fast = RobustStructuredLLM(_llm_fast_base)

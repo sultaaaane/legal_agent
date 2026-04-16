@@ -146,17 +146,18 @@ def review(
             "[red]Graph returned None — check the logs above for the error.[/red]"
         )
         raise typer.Exit(code=1)
-   # --- Handle human-in-the-loop interrupt ---
+    # --- Handle human-in-the-loop interrupt ---
     state_snapshot = graph.get_state(config)
     is_interrupted = bool(state_snapshot.next)
 
     if is_interrupted:
         # Reconstruct payload from the saved state values
         analyses = state_snapshot.values.get("analyses", {})
-        clauses  = state_snapshot.values.get("clauses", [])
-        ctype    = state_snapshot.values.get("contract_type", "Contract")
+        clauses = state_snapshot.values.get("clauses", [])
+        ctype = state_snapshot.values.get("contract_type", "Contract")
 
         from src.agents.flag_detector import CONTRACT_FLAGS_KEY
+
         clause_analyses = sorted(
             [v for k, v in analyses.items() if k != CONTRACT_FLAGS_KEY],
             key=lambda x: x.get("risk_score", 0),
@@ -171,22 +172,30 @@ def review(
             for flag in contract_flags["flags"]:
                 lines.append(f"- {flag}")
             lines.append("")
-        lines += ["### Clause Risk Scores", "",
-                  "| Clause ID | Risk | Flags |",
-                  "|-----------|------|-------|"]
+        lines += [
+            "### Clause Risk Scores",
+            "",
+            "| Clause ID | Risk | Flags |",
+            "|-----------|------|-------|",
+        ]
         for a in clause_analyses:
-            cid   = a.get("clause_id", "?")
+            cid = a.get("clause_id", "?")
             score = a.get("risk_score", 0)
             flags = ", ".join(a.get("flags", [])) or "—"
             emoji = "🔴" if score >= 7 else "🟡" if score >= 4 else "🟢"
             lines.append(f"| `{cid}` | {emoji} {score}/10 | {flags} |")
 
-        high_risk_ids = [a["clause_id"] for a in clause_analyses if a.get("risk_score", 0) >= 7]
+        high_risk_ids = [
+            a["clause_id"] for a in clause_analyses if a.get("risk_score", 0) >= 7
+        ]
 
         payload = {
-            "summary":      "\n".join(lines),
-            "instruction":  "Enter clause IDs to negotiate, e.g. clause_003, clause_006",
-            "clauses":      [{"id": a["clause_id"], "score": a.get("risk_score", 0)} for a in clause_analyses],
+            "summary": "\n".join(lines),
+            "instruction": "Enter clause IDs to negotiate, e.g. clause_003, clause_006",
+            "clauses": [
+                {"id": a["clause_id"], "score": a.get("risk_score", 0)}
+                for a in clause_analyses
+            ],
             "high_risk_ids": high_risk_ids,
         }
 
